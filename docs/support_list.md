@@ -1,5 +1,5 @@
 # openluat
-Model | Platform | USB  | PCIe
+Model | Platform | USB  | PCIe 
 --- | --- | --- | ---
 air724ug | unisoc |✔ usb(ecm,rndis) | ✘
 
