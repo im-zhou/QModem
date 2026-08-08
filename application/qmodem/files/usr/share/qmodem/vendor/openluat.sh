@@ -125,7 +125,7 @@ openluat_query_prefixed()
     local prefix="$2"
     local response
 
-    response=$(at "$at_port" "$command")
+    response=$(cmd_openluat_identity_query "$at_port" "$command")
     printf '%s\n' "$response" | openluat_at_prefixed_value "$prefix"
 }
 
@@ -539,7 +539,7 @@ openluat_load_serving_cell()
     local response options="-t 10"
 
     [ "${openluat_serving_cell_loaded:-0}" = "1" ] && return
-    response=$(at "$at_port" "AT+CCED=0,1")
+    response=$(cmd_openluat_cced_serving "$at_port")
     openluat_serving_cell=$(openluat_parse_cced_serving "$response")
     openluat_serving_cell_loaded=1
 }
@@ -550,9 +550,9 @@ openluat_load_eem_lte_service()
 
     [ "${openluat_eem_lte_loaded:-0}" = "1" ] && return
     openluat_eem_lte_loaded=1
-    enable_response=$(at "$at_port" "AT+EEMOPT=1")
+    enable_response=$(cmd_openluat_eem_enable "$at_port")
     openluat_at_response_ok "$enable_response" || return
-    response=$(at "$at_port" "AT+EEMGINFO?")
+    response=$(cmd_openluat_eem_info "$at_port")
     openluat_eem_lte_service=$(openluat_parse_eem_lte_service "$response")
 }
 
@@ -566,7 +566,7 @@ get_network_prefer()
     local response mode network_prefer_2g=0 network_prefer_4g=0
     local options="-t 10"
 
-    response=$(at "$at_port" "AT+CTEC?")
+    response=$(cmd_openluat_ctec_query "$at_port")
     mode=$(openluat_ctec_mode "$response")
     case "$mode" in
         0) network_prefer_2g=1; network_prefer_4g=1 ;;
@@ -604,7 +604,7 @@ set_network_prefer()
     esac
 
     command="AT+CTEC=$mode,$mode"
-    response=$(at "$at_port" "$command")
+    response=$(cmd_openluat_ctec_set "$at_port" "$mode")
     if openluat_at_response_ok "$response"; then
         status="ok"
     else
@@ -623,7 +623,7 @@ get_lockband()
     local response band_values available selected mode lte_high lte_low band
     local options="-t 10"
 
-    response=$(at "$at_port" "AT*BAND?")
+    response=$(cmd_openluat_band_query "$at_port")
     band_values=$(openluat_band_values "$response")
     available=$(openluat_available_lte_bands)
     selected=""
@@ -701,7 +701,7 @@ set_lockband()
         esac
     done
 
-    response=$(at "$at_port" "AT*BAND?")
+    response=$(cmd_openluat_band_query "$at_port")
     band_values=$(openluat_band_values "$response")
     if [ -z "$band_values" ]; then
         json_select "result"
@@ -744,7 +744,7 @@ set_lockband()
         command="AT*BAND=5,$gsm_band,$umts_band,$lte_high,$lte_low,$roaming_config,$srv_domain,$priority"
     fi
 
-    result=$(at "$at_port" "$command")
+    result=$(cmd_openluat_band_set "$at_port" "${command#AT*BAND=}")
     if openluat_at_response_ok "$result"; then
         status="ok"
     else
@@ -767,7 +767,7 @@ get_neighborcell()
     local lac bsic rxlev
     local options="-t 10"
 
-    response=$(at "$at_port" "AT+CCED=0,2")
+    response=$(cmd_openluat_cced_neighbors "$at_port")
     neighbors=$(openluat_parse_cced_neighbors "$response")
     tab=$(printf '\t')
 
@@ -842,7 +842,7 @@ get_imei()
 {
     local response imei
 
-    response=$(at "$at_port" "AT+CGSN")
+    response=$(cmd_openluat_cgsn "$at_port")
     imei=$(openluat_first_number "$response" | cut -c1-15)
     json_add_string "imei" "$imei"
 }
@@ -852,7 +852,7 @@ get_mode()
 {
     local response mode_num mode available_modes available_mode
 
-    response=$(at "$at_port" "AT+SETUSB?")
+    response=$(cmd_openluat_setusb_query "$at_port")
     mode_num=$(printf '%s\n' "$response" | sed -n 's/^[[:space:]]*[Mm]ode:[[:space:]]*\([12]\)[[:space:]]*$/\1/p' | head -n1)
 
     case "$mode_num" in
@@ -889,8 +889,8 @@ set_mode()
     esac
 
     # Stop the current packet-data call before changing USB composition.
-    stop_response=$(at "$at_port" "AT+RNDISCALL=0,0")
-    response=$(at "$at_port" "AT+SETUSB=$mode_num")
+    stop_response=$(cmd_openluat_rndiscall_stop "$at_port")
+    response=$(cmd_openluat_setusb_set "$at_port" "$mode_num")
     json_select "result"
     json_add_string "set_mode" "$response"
     json_add_string "hangup" "$stop_response"
@@ -901,7 +901,7 @@ get_voltage()
 {
     local response voltage
 
-    response=$(at "$at_port" "AT+CBC")
+    response=$(cmd_openluat_cbc "$at_port")
     voltage=$(openluat_parse_cbc_voltage "$response")
     [ -n "$voltage" ] && add_plain_info_entry "voltage" "$voltage mV" "Voltage"
 }
@@ -935,11 +935,11 @@ sim_info()
     local response sim_status_flag imei isp sim_number imsi iccid
 
     m_debug "OpenLuat SIM info"
-    response=$(at "$at_port" "AT+CPIN?")
+    response=$(cmd_openluat_cpin_query "$at_port")
     sim_status_flag=$(printf '%s\n' "$response" | grep -E '^\+CPIN:|^\+CME ERROR:' | head -n1)
     sim_status=$(get_sim_status "$sim_status_flag")
 
-    response=$(at "$at_port" "AT+CGSN")
+    response=$(cmd_openluat_cgsn "$at_port")
     imei=$(openluat_first_number "$response" | cut -c1-15)
 
     class="SIM Information"
@@ -947,19 +947,19 @@ sim_info()
     add_plain_info_entry "IMEI" "$imei" "International Mobile Equipment Identity"
     [ "$sim_status" = "ready" ] || return
 
-    response=$(at "$at_port" "AT+COPS?")
+    response=$(cmd_openluat_cops_query "$at_port")
     isp=$(printf '%s\n' "$response" | awk -F'"' '/^\+COPS:/ { print $2; exit }')
 
-    response=$(at "$at_port" "AT+CNUM")
+    response=$(cmd_openluat_cnum "$at_port")
     sim_number=$(printf '%s\n' "$response" | awk -F'"' '/^\+CNUM:/ { if ($4 != "") print $4; else print $2; exit }')
 
-    response=$(at "$at_port" "AT+CIMI")
+    response=$(cmd_openluat_cimi "$at_port")
     imsi=$(printf '%s\n' "$response" | grep -o '[0-9]\{15\}' | head -n1)
 
-    response=$(at "$at_port" "AT+ICCID")
+    response=$(cmd_openluat_iccid "$at_port")
     iccid=$(printf '%s\n' "$response" | openluat_at_prefixed_value "+ICCID:" | grep -o '[0-9]\{18,20\}' | head -n1)
     if [ -z "$iccid" ]; then
-        response=$(at "$at_port" "AT+CCID")
+        response=$(cmd_openluat_ccid "$at_port")
         iccid=$(printf '%s\n' "$response" | openluat_at_prefixed_value "+CCID:" | grep -o '[0-9]\{18,20\}' | head -n1)
     fi
 
@@ -975,7 +975,7 @@ network_info()
     local serving_imsi serving_roaming serving_band ignored duplex
 
     m_debug "OpenLuat network info"
-    response=$(at "$at_port" "AT+COPS?")
+    response=$(cmd_openluat_cops_query "$at_port")
     carrier=$(printf '%s\n' "$response" | awk -F'"' '/^\+COPS:/ { print $2; exit }')
     rat_num=$(printf '%s\n' "$response" | awk -F',' '/^\+COPS:/ { gsub(/\r/, "", $4); print $4; exit }')
     network_type=$(get_rat "$rat_num")
@@ -1031,12 +1031,12 @@ EOF
     fi
 
     if [ -z "$serving_rat" ]; then
-        response=$(at "$at_port" "AT+COPS?")
+        response=$(cmd_openluat_cops_query "$at_port")
         rat_num=$(printf '%s\n' "$response" | awk -F',' '/^\+COPS:/ { gsub(/[[:space:]\r\"]/, "", $4); print $4; exit }')
         serving_rat=$(get_rat "$rat_num")
     fi
 
-    response=$(at "$at_port" "AT+CSQ")
+    response=$(cmd_openluat_csq "$at_port")
     csq=$(printf '%s\n' "$response" | awk -F'[:,]' '/^\+CSQ:/ { gsub(/[[:space:]\r]/, "", $2); print $2; exit }')
     case "$csq" in
         ''|*[!0-9]*) rssi="" ;;
@@ -1049,7 +1049,7 @@ EOF
             ;;
     esac
 
-    cesq_response=$(at "$at_port" "AT+CESQ")
+    cesq_response=$(cmd_openluat_cesq "$at_port")
     rsrp=$(openluat_cesq_rsrp "$cesq_response")
     rsrq=$(openluat_cesq_rsrq "$cesq_response")
 
@@ -1146,7 +1146,7 @@ get_dns()
     local cid response dns_values ipv4_dns1 ipv4_dns2
 
     cid=${pdp_index:-5}
-    response=$(at "$at_port" "AT+CGCONTRDP=$cid")
+    response=$(cmd_openluat_cgcontrdp "$at_port" "$cid")
     dns_values=$(printf '%s\n' "$response" | openluat_parse_cgcontrdp_dns "$cid")
     ipv4_dns1=$(printf '%s\n' "$dns_values" | sed -n '1p')
     ipv4_dns2=$(printf '%s\n' "$dns_values" | sed -n '2p')

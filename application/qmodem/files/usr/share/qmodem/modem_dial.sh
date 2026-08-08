@@ -1400,7 +1400,7 @@ openluat_auto_dial_unisoc()
     local at_res_log
     m_debug "openluat_auto_dial: enable RNDIS/ECM auto dial(no monitor)"
     m_debug "openluat_auto_dial: vendor:$manufacturer; platform:$platform; driver:$driver; command:$at_command; pdp_index:$pdp_index; at_port:$at_port"
-    at_res=$(at "$at_port" "$at_command")
+    at_res=$(cmd_dial_command "$at_port" "$at_command")
     at_res_log=$(echo "$at_res" | tr '\r\n' '  ')
     if echo "$at_res" | grep -q "OK"; then
         m_debug "openluat_auto_dial: RNDIS/ECM enabled successfully"
